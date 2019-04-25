@@ -41,6 +41,15 @@ fn run_apache_test(iterations: usize, message: &[u8]) {
     for _ in 0..iterations {
         signkeys.push(apache::SignKey::new());
     }
+    print!("Generating - {} hashes...", iterations);
+    io::stdout().flush().unwrap();
+    let start = Instant::now();
+    for i in 0..iterations {
+        apache::Bls::hash_message(message, apache::SIGNATURE_CONTEXT);
+    }
+    let elapsed = Instant::now() - start;
+    println!("{}.{:0<2}s", elapsed.as_millis() / 1000, (elapsed.as_millis() % 1000) / 10);
+
     print!("Generating - {} signatures...", iterations);
     io::stdout().flush().unwrap();
     let start = Instant::now();
@@ -103,6 +112,15 @@ fn run_librustzcash(iterations: usize, message: &[u8]) {
     for _ in 0..iterations {
         signkeys.push(librustzcash::SignKey::<pairing::bls12_381::Bls12>::new());
     }
+    print!("Generating - {} hashes...", iterations);
+    io::stdout().flush().unwrap();
+    let start = Instant::now();
+    for i in 0..iterations {
+        librustzcash::Bls::hash(message);
+    }
+    let elapsed = Instant::now() - start;
+    println!("{}.{:0<2}s", elapsed.as_millis() / 1000, (elapsed.as_millis() % 1000) / 10);
+
     print!("Generating - {} signatures...", iterations);
     io::stdout().flush().unwrap();
     let start = Instant::now();
@@ -283,17 +301,20 @@ mod librustzcash {
     pub struct Bls;
 
     impl Bls {
+        pub fn hash(message: &[u8]) -> <pairing::bls12_381::Bls12 as Engine>::G1Affine {
+            <pairing::bls12_381::Bls12 as Engine>::G1Affine::hash(message)
+        }
         pub fn sign(message: &[u8], sk: &SignKey<pairing::bls12_381::Bls12>) -> Signature<pairing::bls12_381::Bls12> {
-            let hash = <pairing::bls12_381::Bls12 as Engine>::G1Affine::hash(message);
+            //let hash = <pairing::bls12_381::Bls12 as Engine>::G1Affine::hash(message);
             Signature {
-                point: hash.mul(sk.x)
+                point: Self::hash(message).mul(sk.x)
             }
         }
 
         pub fn verify(message: &[u8], g: &Generator<pairing::bls12_381::Bls12>, signature: &Signature<pairing::bls12_381::Bls12>, vk: &VerKey<pairing::bls12_381::Bls12>) -> bool {
-            let h = <pairing::bls12_381::Bls12 as Engine>::G1Affine::hash(message);
+            //let h = <pairing::bls12_381::Bls12 as Engine>::G1Affine::hash(message);
             let lhs = pairing::bls12_381::Bls12::pairing(signature.point, g.point);
-            let rhs = pairing::bls12_381::Bls12::pairing(h, vk.point);
+            let rhs = pairing::bls12_381::Bls12::pairing(Self::hash(message), vk.point);
             lhs == rhs
         }
     }
@@ -312,7 +333,7 @@ mod apache {
     use std::fmt;
     use super::u32_to_u8;
 
-    const SIGNATURE_CONTEXT: u32 = 1;
+    pub const SIGNATURE_CONTEXT: u32 = 1;
 //    const PROOF_OF_POSSESSION_CONTEXT: u32 = 2;
 
     fn random_mod_order() ->  BIG {
@@ -511,7 +532,7 @@ mod apache {
             result
         }
 
-        fn from_hash(hash: &[u8]) -> ECP {
+        pub fn from_hash(hash: &[u8]) -> ECP {
             let mut vec = hash.to_vec();
             let len = vec.len();
 
